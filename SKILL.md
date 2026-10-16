@@ -3,7 +3,7 @@ name: fkssj-island-bot
 description: "Use when 用户提到 fkssj、海岛经营游戏、fkssj帮助/ssj帮助、游戏启动或停止、贸易船检查或交货、资源检查或采集、自动闯关、主界面检查或强制恢复、开启或关闭定时任务（自动检查贸易/自动检查资源/搁浅的货轮提醒/联盟商船提醒）。本 skill 通过雷电模拟器的 adb server (127.0.0.1:5037) 驱动游戏 com.gx.sw.qa.fkssj003.esj，提供单次执行的自动化脚本：模拟器平板版配置检查修正、启动/停止游戏、检查并恢复主界面、三船贸易检查+自动交货、7 种资源 OCR 检查、单资源采集（时长按剩余百分比自动定 1/3/5 分钟，采后自动复查全部资源，多资源用 --no-recheck 分组编排）、强制重启回主界面、自动闯关长跑；并支持用 /cron 编排定时任务：自动检查贸易/资源（默认每 30 分钟可指定周期，夜间 01:00-08:00 只执行不推送，资源不足自动采集）、搁浅货轮整点提醒（每天 8-22 点）、联盟商船定点提醒（每天 8/11/14/17/20/23 点）。脚本检查与操作分离，输出 RESULT 汇总行与语义化 exit code。"
 version: 1.4.0
 author: "Ompupupupupupu"
-license: MIT
+license: AGPL-3.0
 platforms: [windows]
 metadata:
   hermes:
@@ -331,7 +331,7 @@ metadata:
 
 ## 部署与开源说明
 
-- 依赖见 `requirements.txt`（Python 3.12+），许可证见 `LICENSE`（MIT）。
+- 依赖见 `requirements.txt`（Python 3.12+），许可证见 `LICENSE`（AGPL-3.0）。
 - `local/` 目录是本机部署时生成的完整路径命令清单（见"运行位置"节），
   属机器私有配置，已被 `.gitignore` 排除，不随仓库分发。
 - 部署到新机器：安装 `requirements.txt` 依赖 → 确认雷电模拟器为平板版预设
