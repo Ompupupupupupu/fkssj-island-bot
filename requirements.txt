@@ -1,0 +1,3 @@
+# Python 3.12 实测可用（3.11 与 rapidocr-onnxruntime 不兼容）
+opencv-python
+rapidocr_onnxruntime
