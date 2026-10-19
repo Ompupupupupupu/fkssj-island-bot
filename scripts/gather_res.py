@@ -6,6 +6,7 @@
       (连续采集多种资源时逐个加此参数跳过复查, 全部采完由 check_res 统一复查)
 流程: 主界面 -> 资源界面 -> OCR该资源剩余/上限定采集时长 -> 点"获取"按钮
       -> 点"前往"回主界面 -> 点(541,976) -> 0.5s后点(625,1115) 进采集界面
+      -> 检测右下"自动"按钮是否旋转: 旋转=游戏已在自动采集; 否则点(962,1705)开启
       -> 按判定时长采集 -> 点(75,1735) -> 0.5s后点(540,1200) 回主界面
       -> 复检已在主界面 -> 复查全部资源剩余(同 check_res 逻辑), 附在 RESULT 行
       (带 --no-recheck 时跳过复查)
@@ -15,9 +16,31 @@
 exit code: 0=采集完成已回主界面 1=前置不满足/参数错误/退出后不在主界面
 """
 from game_lib import *
+import cv2
 import sys
 
 RES_NAMES = list(RES_ITEMS.keys())    # ['鱼','塑料','木材','碎布','废金属','玻璃','海藻']
+
+# 游戏自带"自动采集": 采集界面右下"自动"按钮, 自动采集中按钮图标旋转, 未开启时静止
+AUTO_BOX = (920, 1673, 1005, 1758)   # "自动"按钮检测区域(左上x0,y0 右下x1,y1)
+AUTO_BTN_X, AUTO_BTN_Y = 962, 1705   # "自动"按钮点击位置
+SPIN_FRAMES = 3                      # 旋转检测采样帧数
+SPIN_INTERVAL = 0.6                  # 采样间隔(秒)
+SPIN_DIFF_TH = 3.0                   # 相邻帧区域平均差>=此值=按钮在转
+
+
+def is_spinning():
+    """检测"自动"按钮区域是否旋转(=游戏正在自动采集):
+    连续采样帧裁剪按钮区域做像素差分, 任一相邻帧对有差异=旋转中"""
+    x0, y0, x1, y1 = AUTO_BOX
+    prev = shot()[y0:y1, x0:x1]
+    for _ in range(SPIN_FRAMES - 1):
+        time.sleep(SPIN_INTERVAL)
+        cur = shot()[y0:y1, x0:x1]
+        if cv2.absdiff(prev, cur).mean() >= SPIN_DIFF_TH:
+            return True
+        prev = cur
+    return False
 
 
 def pick_name(arg):
@@ -78,6 +101,13 @@ def main():
     time.sleep(0.5)
     log('%s: 主界面采集入口第二步, 进入采集界面' % name)
     tap(MAIN2_X, MAIN2_Y)
+    time.sleep(0.5)
+    log('%s: 检测自动采集状态' % name)
+    if is_spinning():
+        log('%s: 已在自动采集' % name)
+    else:
+        log('%s: 未开启自动采集, 开启' % name)
+        tap(AUTO_BTN_X, AUTO_BTN_Y)
     log('%s: 采集进行中, %d 分钟...' % (name, minutes))
     time.sleep(minutes * 60)
     log('%s: 采集结束, 退出' % name)

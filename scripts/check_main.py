@@ -6,8 +6,9 @@
 自动返回:
   识别到"城战" -> 点"基地"按钮 (970,1850)
   其他界面     -> 点返回按钮 (5,1860)
-  点击后复检; 第1次复检未回主界面 -> 第2次改点兜底按钮(10,1760),
-  其后等3秒再检共2次, 每次未回主界面点返回按钮(层层退回)
+  点击后复检; 第1次复检未回主界面 -> 第2次非城战点兜底按钮(10,1760)、
+  城战则点"基地"按钮, 其后等3秒再检共2次, 每次未回主界面按界面类型点按钮(层层退回);
+  全部尝试后等3秒做最终复检(最后一次点击生效不算失败)
 输出: MAIN / 动作细节 / NOT_MAIN
 exit code: 0=已在或已回主界面, 1=恢复失败
 """
@@ -32,16 +33,25 @@ def recover_tap(img):
 
 def try_recovered(use_last=False):
     """复检并按需再点恢复按钮: 已回主界面True; 否则点一次恢复按钮后False
-    use_last=True 点兜底按钮(第2次尝试用); 否则按界面类型点常规按钮(层层退回)"""
+    use_last=True 且非城战点兜底按钮(第2次尝试用); 城战界面任何时候都点"基地"按钮"""
     img = shot()
     if on_main(img):
         print('RECOVERED 已回主界面 nav_score=%.2f' % nav_score(img))
         return True
-    if use_last:
+    if use_last and not has_citywar(img):
         print('复检未回主界面, 点兜底按钮')
         tap(LAST_X, LAST_Y)
     else:
         recover_tap(img)
+    return False
+
+
+def check_recovered():
+    """只读终检: 已回主界面打印 RECOVERED 并返回 True"""
+    img = shot()
+    if on_main(img):
+        print('RECOVERED 已回主界面 nav_score=%.2f' % nav_score(img))
+        return True
     return False
 
 
@@ -52,12 +62,15 @@ def main():
         return 0
 
     recover_tap(img)               # 第1次: 按界面类型点常规恢复按钮
-    if try_recovered(use_last=True):   # 第2次: 复检未回主界面点兜底按钮
+    if try_recovered(use_last=True):   # 第2次: 复检未回主界面, 非城战点兜底/城战点"基地"
         return 0
-    for i in (1, 2):               # 剩余次数: 每次等3秒, 未回主界面点返回按钮
+    for i in (1, 2):               # 剩余次数: 每次等3秒, 未回主界面按界面类型点按钮
         time.sleep(RECOVER_WAIT)
         if try_recovered():
             return 0
+    time.sleep(RECOVER_WAIT)       # 最终复检: 最后一次点击生效则不算失败
+    if check_recovered():
+        return 0
     print('NOT_MAIN 恢复失败')
     return 1
 

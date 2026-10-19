@@ -34,7 +34,8 @@ MUTEX_PIDS = [                     # 长跑任务 PID 文件(存在即让位)
 ]
 DEVICE_SCRIPTS = [                 # 占设备脚本名单(进程命令行命中即让位, 排除自身)
     'check_main.py', 'check_ships.py', 'check_res.py', 'gather_res.py',
-    'claim_online_reward.py', 'claim_seq.py', 'battle_run.py',
+    'claim_online_reward.py', 'claim_seq.py', 'claim_exp.py', 'claim_intel.py',
+    'battle_run.py',
     'start_game.py', 'stop_game.py', 'force_main.py', 'status_check.py',
 ]
 # game_status.py(只读 adb 探测) / push_reminder.py(无截屏无点击) 不占设备, 不入名单
