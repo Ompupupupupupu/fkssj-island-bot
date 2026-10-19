@@ -15,7 +15,7 @@
     本项目全部脚本坐标基于该竖屏截图
   - 模拟器运行中改写配置可能在其退出时被内存态覆盖; 重启后重跑本脚本,
     若仍不符则先关闭模拟器再跑本脚本修正, 然后启动
-用法: python setup_emulator.py [--ld-dir <雷电安装目录>] [--instance <实例名>]
+用法: python setup_emulator.py [--ld-dir <雷电安装目录>] [--instance <实例目录名>]
   (--instance 默认 leidian0)
 exit code: 0=配置符合(或已修正且模拟器未运行) 1=读写失败或安装目录未找到 2=已修正需重启模拟器
 """

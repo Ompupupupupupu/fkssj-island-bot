@@ -2,14 +2,23 @@
 """检查三艘贸易船状态并对可交货的船自动交货 (单次执行)
 流程: 主界面 -> 贸易界面 -> 逐船判定并处理 -> 返回主界面
   未回来色   -> 跳过
-  已回来色   -> 点船收货 -> 点(500,1600)过结算 -> 隔1s点船交货 -> 复检
-  货物不全色 -> 货已收(上次交货未成), 直接点船交货 -> 复检
+  已回来色   -> 点船收货 -> 点(500,1600)过结算 -> 隔1s点船交货 -> 弹窗判定 -> 复检
+  货物不全色 -> 货已收(上次交货未成), 直接点船交货 -> 弹窗判定 -> 复检
+弹窗判定: 交货后 0.5s 查"所需产品不足"弹窗(缺货交货被拒), 命中则点退出键回贸易页面
 复检: 仍是货物不全色=交货失败(exit 2) / 变未回来色=交货成功
 输出: 每步动作 + RESULT 汇总行(机器可解析)
 exit code: 0=全部处理完(含未回来跳过) 1=不在主界面或未知状态 2=有船货物不足
 """
 from game_lib import *
 import sys
+
+# 交货被拒检测: 点交货 0.5s 后截屏, (110,388) 为弹窗紫色标题栏 = 被"所需产品不足"
+# 弹窗挡住(缺货交货被拒), 需点 (951,409) 弹窗退出键回贸易页面; 颜色不一致 = 交货
+# 成功无弹窗, 无额外操作。参考色实测自缺货弹窗画面(两次独立截屏一致, 周边平坦)。
+REJECT_CHECK_SEC = 0.5
+REJECT_X, REJECT_Y = 110, 388
+REJECT_BGR = (202, 99, 106)
+REJECT_EXIT_X, REJECT_EXIT_Y = 951, 409
 
 
 def handle_ship(i, img):
@@ -34,8 +43,15 @@ def handle_ship(i, img):
     else:  # 货物不全
         print('船%d 货物不全遗留(货已收), 尝试交货' % i)
         tap(x, y)                        # 直接交货, 无需结算
-    time.sleep(RECHECK_SEC)
-    img = shot()          # 交货后界面刷新, 供后续船判定
+    time.sleep(REJECT_CHECK_SEC)
+    img = shot()          # 先判交货后有无"所需产品不足"弹窗
+    if close(px(img, REJECT_X, REJECT_Y), REJECT_BGR):
+        print('船%d 交货被拒(所需产品不足), 退回贸易页面' % i)
+        tap(REJECT_EXIT_X, REJECT_EXIT_Y)
+        img = shot()      # 弹窗退回后的干净贸易页, 供复检与后续船判定
+    else:
+        time.sleep(RECHECK_SEC - REJECT_CHECK_SEC)  # 交货成功无弹窗, 补足原复检等待
+        img = shot()      # 交货后界面刷新, 供复检与后续船判定
     c2 = px(img, x, y)
     s2 = ship_state(c2)
     if s2 == '货物不全':

@@ -1,13 +1,13 @@
 ---
 name: fkssj-island-bot
-description: "Use when 用户提到 fkssj、海岛经营游戏、fkssj帮助/ssj帮助、游戏启动或停止、贸易船检查或交货、资源检查或采集、自动闯关、主界面检查或强制恢复、开启或关闭定时任务（自动检查贸易/自动检查资源/搁浅的货轮提醒/联盟商船提醒）。本 skill 通过雷电模拟器的 adb server (127.0.0.1:5037) 驱动游戏 com.gx.sw.qa.fkssj003.esj，提供单次执行的自动化脚本：模拟器平板版配置检查修正、启动/停止游戏、检查并恢复主界面、三船贸易检查+自动交货、7 种资源 OCR 检查、单资源采集（时长按剩余百分比自动定 1/3/5 分钟，采后自动复查全部资源，多资源用 --no-recheck 分组编排）、强制重启回主界面、自动闯关长跑；并支持用 /cron 编排定时任务：自动检查贸易/资源（默认每 30 分钟可指定周期，夜间 01:00-08:00 只执行不推送，资源不足自动采集）、搁浅货轮整点提醒（每天 8-22 点）、联盟商船定点提醒（每天 8/11/14/17/20/23 点）。脚本检查与操作分离，输出 RESULT 汇总行与语义化 exit code。"
-version: 1.4.0
+description: "Use when 用户提到 fkssj、海岛经营游戏、fkssj帮助/ssj帮助、游戏启动或停止、贸易船检查或交货、资源检查或采集、闯关或停止闯关、领取城战在线奖励（手动领第x次）、主界面检查或强制恢复、开启或关闭定时任务或提醒（自动检查贸易/自动检查资源/自动领取城战在线奖励/夜间总结推送/每日服务总结/货轮提醒/商船提醒/私聊监视、暂停自动化/我想自己玩一会/恢复自动化）。本 skill 通过雷电模拟器的 adb server (127.0.0.1:5037) 驱动游戏 com.gx.sw.qa.fkssj003.esj，提供单次执行的自动化脚本：模拟器平板版配置检查修正、启动/停止游戏、检查并恢复主界面、三船贸易检查+自动交货、7 种资源 OCR 检查、单资源采集（时长按剩余百分比自动定 1/3/5 分钟，采后自动复查全部资源，多资源用 --no-recheck 分组编排）、强制重启回主界面、城战在线奖励单次领取（第 1-7 次任一次）与 7 次序列后台领取、自动闯关（后台运行、--stop 停止）；长任务一律后台启动防会话超时。推送架构：长跑脚本（闯关/领取序列）退出路径自动直推微信战果（夜间写夜间日志）、货轮/商船到点提醒由 Windows 计划任务整点唤醒脚本直推（0 token）、私聊未读监视常驻后台进程每 2 分钟检测发现未读直推提醒（脚本直推均内置 30 秒推送锁；夜间事件一律记入夜间日志），并支持用 /cron 编排定时任务：自动检查贸易/资源（默认每 30 分钟可指定周期，夜间 01:00:00-07:59:59 只执行不推送、结果记入夜间日志，资源不足自动采集）、自动领取城战在线奖励（每天 20:25 唤醒一次，后台序列领完 7 次，奖励仅 20:00-21:00 可领）、夜间总结推送（每天 08:04 把夜间日志统一总结推送一次并清空）、每日服务总结（每天 01:04 盘点当前开启的服务与各服务当日完成次数，夜间照常直推）。支持一键暂停/恢复全部自动化（暂停即停定时任务/到点提醒/私聊监视/后台长跑，满 1 小时未恢复主动询问一次；恢复按暂停前状态逐项恢复，闯关除外）。定时任务遇游戏未运行会先询问用户是否启动（3 分钟无回复跳过本轮）。脚本检查与操作分离，输出 RESULT 汇总行与语义化 exit code。"
+version: 3.2.4
 author: "Ompupupupupupu"
 license: AGPL-3.0
 platforms: [windows]
 metadata:
   hermes:
-    tags: [fkssj, game-automation, adb, ldplayer, ocr, trade-ships, resource-gathering, battle-loop]
+    tags: [fkssj, game-automation, adb, ldplayer, ocr, trade-ships, resource-gathering, battle-loop, citywar-online-reward]
     category: automation
     related_skills: [android-device-automation]
 ---
@@ -17,36 +17,67 @@ metadata:
 ## Overview
 
 雷电模拟器 9（`emulator-5554`）中海岛经营游戏 `com.gx.sw.qa.fkssj003.esj`
-的自动化脚本集。**环境要求：雷电平板版预设**（配置分辨率 1920×1080、DPI 280；
-竖屏显示下 adb 截图为 1080×1920，全部坐标基于此；不符时用 `scripts/setup_emulator.py`
-检查修正）。设计原则：**单次执行、检查与操作分离、结果可解析**——每个脚本跑一轮
+的自动化脚本集。**环境要求：雷电平板版预设**（1920×1080 + DPI 280，详见"前提条件"）。
+设计原则：**单次执行、检查与操作分离、结果可解析**——每个脚本跑一轮
 就退出，stdout 末行输出机器可解析的 `RESULT:` 汇总，exit code 表达语义（0 正常 /
-1 失败 / 2 需要用户行动）。
+1 失败 / 2 需要用户行动）。例外：`battle_run.py` / `claim_seq.py` 是后台长跑
+（必须后台启动、`--stop` 停止，防调用会话超时）；`chat_watch.py` 是常驻后台监视
+进程（同 `--stop` 模式），`push_reminder.py` 由 Windows 计划任务整点唤醒即退；
+其余脚本一律单次执行。
 
 脚本通过本机 adb server（127.0.0.1:5037，雷电模拟器启动后自动在跑）直连设备，
 无需 adb.exe 在 PATH。屏幕感知 = 截图 + 模板匹配 + 固定像素颜色判定 + RapidOCR。
 
+各功能操作细节不在本文件展开——见下文"按需读取导航"，按需读取 `references/`
+对应文件。
+
 ## When to Use
 
 - 用户说"检查模拟器配置 / 分辨率不对 / 平板版设置" → `scripts/setup_emulator.py`（检查+自动修正）
+- 用户说"游戏开了吗 / 游戏在运行吗" → `scripts/game_status.py`（只读探测：模拟器未启动 / 游戏未运行 / 游戏运行中）
 - 用户说"启动游戏 / 打开游戏" → `scripts/start_game.py`（已运行则报告状态不重启）
 - 用户说"停止游戏 / 关掉游戏" → `scripts/stop_game.py`
 - 用户说"检查贸易 / 船回来了吗 / 交货" → `scripts/check_ships.py`（检查+自动交货一体）
 - 用户说"看看资源 / 鱼够不够 / 木材还剩多少" → `scripts/check_res.py`（只读 OCR）
 - 用户说"采集鱼 / 去钓鱼 / 收集海藻" → `scripts/gather_res.py`（时长按剩余百分比自动定 1/3/5 分钟，完成后自动复查全部资源）
 - 需要采集多种资源 → 按"典型编排 - 多资源采集"的分组规则决定采哪些：每组只采组内剩余最少一种
-- 用户说"闯关 / 打关卡 / 继续打" → `scripts/battle_run.py`（长跑循环，Ctrl+C 中断）
+- 用户说"闯关 / 打关卡 / 继续打" → 后台启动 `scripts/battle_run.py`，启动后立即汇报（流程见 `references/battle.md`）
+- 用户说"停止闯关 / 别打了" → `scripts/battle_run.py --stop`，再取日志尾部统计汇报（见 `references/battle.md`）
+- 用户说"领取城战在线奖励 / 帮我领取第x次奖励"（如"帮我领取一下第三次奖励"）→ `scripts/claim_online_reward.py <x>`（手动单次领取，x 为 1-7，见 `references/reward.md`）
 - 用户说"回主界面 / 游戏卡在某个界面" → `scripts/check_main.py`，失败再 `scripts/force_main.py`
 - 周期性维护 → 编排流程见下文"典型编排"
-- 用户说"fkssj帮助 / ssj帮助" → 按 `templates/help.txt` 模板逐行输出功能清单（保持模板换行）
-- 用户说"开启/关闭 + 自动检查贸易 / 自动检查资源 / 搁浅的货轮提醒 / 联盟商船提醒"
-  → 按下文"定时任务与提醒"节用 /cron 创建或删除定时任务
+- 用户说"fkssj帮助 / ssj帮助" → 按 `templates/help.txt` 模板逐行输出树结构功能清单（保持模板换行与缩进）
+- 用户说"开启/关闭 + 自动检查贸易 / 自动检查资源 / 自动领取城战在线奖励 / 夜间总结推送 / 每日服务总结" → 用 /cron 创建或删除定时任务（任务表与 prompt 模板见 `references/cron.md`）
+- 用户说"开启/关闭 + 货轮提醒 / 商船提醒 / 私聊监视 / 私聊提醒" → 管理货轮/商船 Windows 计划任务或私聊监视常驻进程（见 `references/chat.md`）
+- 用户说"暂停自动化 / 我想自己玩一会" → 按暂停协议一键停掉全部自动化（定时任务/提醒/私聊监视/后台长跑，满 1 小时未恢复主动询问一次），见 `references/pause.md`
+- 用户说"恢复自动化" → 按恢复协议恢复暂停前开启的服务（闯关除外），见 `references/pause.md`
 
 不适用于：其他游戏、其他分辨率、其他模拟器。
+
+## 按需读取导航（references/）
+
+- 需要某个脚本的参数、exit code、行为细节时 → 读取 `references/scripts.md`
+- 用户说闯关/停止闯关，需要闯关战果，或处理闯关与其他任务冲突时 → 读取 `references/battle.md`
+- 用户说领取城战在线奖励/帮我领取第 x 次奖励，处理领取序列冲突、关闭自动领取时 → 读取 `references/reward.md`
+- 用户说开启/关闭定时任务（自动检查贸易/资源、自动领取城战在线奖励、夜间总结推送、每日服务总结），或想盘点当前开了哪些任务/监控时 → 读取 `references/cron.md`
+- 用户说开启/关闭货轮/商船提醒或私聊监视，或排查提醒/监视未推送时 → 读取 `references/chat.md`
+- 用户说暂停自动化/我想自己玩一会/恢复自动化，或排查暂停期间异常（暂停后仍有任务在跑、询问没来、恢复后任务没回来）时 → 读取 `references/pause.md`
+- 遇到报错、异常现象（连接失败、exit 2、主界面误判），或不确定后台长跑是否在跑时 → 读取 `references/troubleshooting.md`
+- 需要修改坐标/颜色常量、校准判定、更新匹配模板，或部署到新机器时 → 读取 `references/maintenance.md`
 
 ## 运行位置（强指令）
 
 - **必须从本 skill 的 scripts/ 目录运行脚本**，不得使用其他来源的副本。
+- **对模拟器与游戏的一切操作只能经本 skill 的脚本**：截图、点击、滑动、界面
+  识别、游戏启停等一律调用 scripts/ 对应脚本完成；**严禁自行构造 adb 命令**
+  （如 input tap / input swipe / screencap / shell am 等）或用其他工具直接操作
+  设备。唯一例外：任务 prompt 模板中给出的雷电模拟器实例启动命令
+  （ldconsole launch --index 0，属电源级操作非游戏内操作）。
+- **本 skill 目录对 agent 只读（local/ 除外）**：不得新增、修改或删除 SKILL.md、
+  references/、scripts/、templates/、assets/、README.md 等任何 skill 文件；本机
+  部署需要的启动器、完整路径命令清单等只写入 local/ 目录。skill 的行为修正与
+  功能更新由维护者发布新版本进行，agent 发现缺陷时如实上报用户，勿自行改动
+  分发文件。
 - **本机部署优先规则**：若本 skill 根目录存在 `local/commands.md`（部署时生成的
   完整路径命令清单），**必须先读取它并逐字使用其中的命令，不得自行改写路径**；
   不存在时按通用模板以实际安装位置展开。
@@ -57,41 +88,24 @@ metadata:
 <PYTHON> <SKILL_DIR>/scripts/<脚本名>.py
 ```
 
-- 路径一律用正斜杠原生形式（见 Common Pitfalls 第 7 条）。
+- 路径一律用正斜杠原生形式（Git Bash `/c/...` 路径坑见 `references/scripts.md`）。
 
 ## 前提条件（缺一不可，先检查再跑）
 
 1. **雷电模拟器 9 已启动**（adb server 随模拟器自动运行）。连接失败报
-   `ConnectionRefusedError` / `no devices` = 模拟器没开。游戏未运行时可先跑
-   `scripts/start_game.py`，它会冷启动游戏并等待停到主界面。
+   `ConnectionRefusedError` / `no devices` = 模拟器没开。
 2. **雷电模拟器为平板版预设**：配置分辨率 1920×1080、DPI 280（竖屏显示下 adb 截图
    1080×1920，本 skill 全部坐标基于此）。首次使用或怀疑环境不符时先跑
    `scripts/setup_emulator.py`（非默认安装位置加 `--ld-dir`，多实例加 `--instance`）：
-   符合 exit 0；不符自动修正，模拟器运行中修正后
-   exit 2 需重启模拟器生效（重启后重跑验证；仍不符则关闭模拟器再跑本脚本）。
+   符合 exit 0；不符自动修正，修正后 exit 2 需重启模拟器生效
+   （完整验证链见 `references/scripts.md`）。
 3. **Python 3.12+**（已装 `requirements.txt` 中的依赖：opencv-python、
    rapidocr_onnxruntime；实测 3.11 与 rapidocr-onnxruntime 不兼容）。
 4. 脚本位于本 skill 的 `scripts/` 目录，匹配模板位于 `assets/`（`assets/nav_stage.png`、
    `assets/btn_fight.png`，脚本按相对路径自动定位，skill 目录整体搬移不影响运行）。
-   运行时截图写入 `%TEMP%/fkssj_skill_shots/`。
-5. **仅支持单模拟器实例**（emulator-5554 / 实例 leidian0）；多实例环境请先关闭其他
+   运行时截图写入 `$TEMP/fkssj_skill_shots/`。
+5. **仅支持单模拟器实例**（emulator-5554 / 第一个实例，实例目录 leidian0）；多实例环境请先关闭其他
    实例再运行脚本。
-
-## 脚本清单
-
-| 文件 | 角色 | 参数 | exit code |
-|---|---|---|---|
-| `scripts/game_lib.py` | 共享库（常量+判定函数），被各脚本导入，不直接运行 | - | - |
-| `scripts/pyadb.py` | adb 直连库，被 game_lib 导入，不直接运行 | - | - |
-| `scripts/setup_emulator.py` | 检查并修正雷电模拟器基础配置：要求平板版配置分辨率 1920×1080、DPI 280；不符时自动改写实例配置；模拟器运行中修正后需重启生效（重启后重跑验证，仍不符则关模拟器再跑本脚本修正后启动）；安装目录自动探测，未命中需显式指定 | 可选 `--ld-dir <雷电安装目录>`、`--instance <实例名，默认 leidian0>` | 0=符合或已修正(模拟器未运行)；1=读写失败或安装目录未找到；2=已修正需重启模拟器 |
-| `scripts/start_game.py` | 启动游戏：已运行则报告状态不重启；未运行则冷启动+轮询等主界面（上限 60 秒），超时走 check_main 兜底 | 无 | 0=游戏运行中；1=启动失败 |
-| `scripts/stop_game.py` | 停止游戏：force-stop 后 2 秒复检，仍在则重试一次 | 无 | 0=已停止（含本来就未运行）；1=停止失败 |
-| `scripts/check_main.py` | 检查是否在主界面；不在则自动恢复：第 1 次按界面类型点按钮（城战→"基地"，其他→返回），第 2 次尝试点兜底按钮，之后 2 次复检（每次等 3 秒）未回主界面再点返回按钮层层退回 | 无 | 0=已在/已回主界面；1=恢复失败 |
-| `scripts/check_ships.py` | 三艘贸易船状态检查 + 自动收货交货：未回来→跳过；已回来→收货→结算→交货；货物不全→直接交货，1 秒后复检确认 | 无 | 0=处理完；1=不在主界面或未知状态；2=有船货物不足（需用户补货） |
-| `scripts/check_res.py` | 7 种资源剩余数量 + 上限 OCR（只读，不采集），低于上限 70% 标记不足 | 无 | 0=完成；1=不在主界面；2=上限 OCR 失败 |
-| `scripts/gather_res.py` | 采集一种资源，时长按剩余百分比自动判定：>70% 采 1 分钟、40%-70% 采 3 分钟、<40% 采 5 分钟（OCR 失败默认 3 分钟）；完成后自动回主界面并复检（3 次重试），随后自动复查全部资源剩余（同 check_res，附在 RESULT 行）；`--no-recheck` 跳过复查（多资源连续采集时用） | 资源名或序号 1-7：鱼/塑料/木材/碎布/废金属/玻璃/海藻；可选 `--no-recheck` | 0=采集完成（RESULT 含时长与全资源剩余）；1=参数错误/不在主界面/退出失败 |
-| `scripts/force_main.py` | 强制回主界面（check_main 失败时用）：重启游戏→轮询等加载（上限 60 秒）→超时再跑一次 check_main 兜底 | 无 | 0=已在/已回主界面；1=强制恢复失败 |
-| `scripts/battle_run.py` | 自动闯关长跑：开战 12 秒后跳过看结果，胜→直接下一关，败→再战；连续 5 败或单场超 15 分钟告警退出（告警只打印 [ALERT] 行，不弹窗，由 agent 转告用户）；**任何退出路径（告警/中断/异常）结束后自动调 check_main.py 恢复主界面**，末尾输出 RESULT 行 | 无（需人在场，Ctrl+C 中断） | 0=结束且回主界面成功；1=异常退出或回主界面失败（再走 force_main.py 恢复链） |
 
 ## 输出规范（每次汇报必须遵守）
 
@@ -119,14 +133,17 @@ metadata:
   逐行连续排列，条目之间不加空行。
 - **长内容必须拆行**：字段值含多个条目时（如 check_res 的 7 种资源）禁止挤在一行，
   必须每个条目单独一行；"下一步"有多个动作时同样每个动作一行。单行能看全的不拆。
-- 连续运行多个脚本时，每个脚本单独一块上述格式，块之间空一行，按执行顺序排列，不要合并。
+- **多步骤用 ↓ 分隔**：连续运行多个脚本/大步骤时，每个步骤单独一块上述格式
+  （`已回到主界面` 单行输出也算一块），按执行顺序排列，不要合并；**相邻步骤块之间
+  插入一行"↓"（向下箭头独占一行）表示执行推进**（取代空行分隔）；全部步骤汇报完
+  可空一行后附一行本轮总结。
 - 汇报只保留状态与结果，不要复述 `[HH:MM:SS]` 前缀的过程日志。
 - **任何输出不得出现按钮坐标**（本项目硬约定）。
 - exit 2 = 需要用户行动（如贸易船缺货、OCR 失败），在"下一步"中写明给用户的建议。
-- `battle_run.py` 被中断或告警退出后，按同样格式汇报末尾统计行（胜/负/用时），
-  "结果"字段另含结束后的 RESULT 行（已回主界面/回主界面失败）。
-- `gather_res.py` 默认在 RESULT 行附带采集后复查的全资源剩余（与 check_res 同构），
-  按 check_res 示例同样方式逐行展开；带 `--no-recheck` 时 RESULT 仅"采集完成(N分钟) 回主界面=是"。
+- **长跑脚本特例**：`battle_run.py` / `claim_seq.py` 后台启动后等待约 5 秒确认
+  PID 文件存在即报"已启动"、不等待结束（防调用会话超时）；`--stop` 后按其 RESULT
+  行汇报——战果推送时机、待推送标记删除、gather_res 的 RESULT 形态等细则见
+  `references/battle.md`、`references/reward.md`、`references/scripts.md`。
 
 多条目拆行示例（check_res.py 的 7 种资源与多步采集）：
 
@@ -148,38 +165,15 @@ metadata:
 
 ## 典型编排
 
-**收工/开工**：
-
-```text
-<PYTHON> <SKILL_DIR>/scripts/stop_game.py
-```
-
-```text
-<PYTHON> <SKILL_DIR>/scripts/start_game.py
-```
-
-**周期维护**（如"帮我做一轮日常"，串行执行）：
-
-```text
-<PYTHON> <SKILL_DIR>/scripts/check_main.py
-```
-
-```text
-<PYTHON> <SKILL_DIR>/scripts/check_ships.py
-```
-
-```text
-<PYTHON> <SKILL_DIR>/scripts/check_res.py
-```
+**周期维护**（如"帮我做一轮日常"）：`check_main.py` → `check_ships.py` →
+`check_res.py` 串行执行（通用命令模板见"运行位置"），汇报按输出规范多步骤 ↓ 分隔。
 
 **多资源采集（分组规则，必须遵守）**：check_res 的 RESULT 行"不足"列表含多种资源时，
-按采集界面分组：`[鱼]`、`[塑料, 木材, 碎布]`、`[废金属, 玻璃, 海藻]`。
+按采集界面分组：`[鱼]`、`[塑料, 木材, 碎布]`、`[废金属, 玻璃, 海藻]`。同组的多种资源
+不足 → 只采**组内剩余数量最少**的一种；不足资源跨组 → 每组各采一次（各取组内最少）。
 
-- 同组的多种资源不足 → 只采集**组内剩余数量最少**的那一种，运行一次。
-- 不足资源分布在不同组 → 每组各运行一次（各自取组内最少的）。
-- 连续采集时每个 `gather_res.py` 都带 `--no-recheck` 跳过逐次复查，串行执行；
-  **全部采集完成后统一跑一次 `check_res.py` 复查**，按输出规范汇报。
-- 只采一种资源时不加 `--no-recheck`（脚本采后自动复查，无需再跑 check_res）。
+- 连续采集时每个 `gather_res.py` 都带 `--no-recheck`，串行执行；**全部采完后统一跑
+  一次 `check_res.py` 复查**。只采一种资源时不加 `--no-recheck`（脚本采后自动复查）。
 
 ```text
 <PYTHON> <SKILL_DIR>/scripts/gather_res.py "鱼" --no-recheck
@@ -190,69 +184,38 @@ metadata:
 **恢复链**：`check_main.py` exit 1 → `force_main.py` → 仍 exit 1 才报告用户人工处理
 （可能被模态弹窗卡住，不要乱点，如实上报）。
 
-**闯关**：确认无其他脚本在跑 → `battle_run.py` 前台运行 → 用户中断或告警退出后
-自动恢复主界面，按输出规范汇报统计与末尾 RESULT 行。
+**闯关**：后台启动、停止与战果汇报、让位规则见 `references/battle.md`。
 
-## 定时任务与提醒（/cron 编排）
+**城战在线奖励**：手动单次领取、20:25 定时序列领取与不对称互斥规则见
+`references/reward.md`。
 
-用户说"开启/关闭 + 任务名"时，用 Hermes 的 `/cron` 管理定时任务：
+**定时任务**：任务表与 prompt 模板见 `references/cron.md`。
 
-- 开启：先 `/cron list` 查重，同类任务已存在则告知用户、不重复创建；
-  不存在则用 `/cron add "<cron 表达式>" "<任务 prompt>"` 创建。
-- 关闭：`/cron list` 找到对应任务（prompt 首行含【fkssj …】标识）后删除该任务。
-- 用户指定检查周期（如"每 1 小时"）→ 换算成对应 cron 表达式；
-  提醒类任务是游戏刷新时间，固定不可改。
+**到点提醒与私聊监视**：货轮/商船 schtasks 提醒与 chat_watch 常驻监视见
+`references/chat.md`。
 
-| 任务 | 开启触发词 | 默认 cron 表达式 | 关闭触发词 |
-|---|---|---|---|
-| 自动检查贸易 | "开启自动检查贸易" | `*/30 * * * *` | "关闭自动检查贸易" |
-| 自动检查资源 | "开启自动检查资源" | `*/30 * * * *` | "关闭自动检查资源" |
-| 搁浅的货轮提醒 | "开启搁浅的货轮提醒"、"提醒货轮" | `0 8-22 * * *` | "关闭搁浅的货轮提醒" |
-| 联盟商船提醒 | "开启联盟商船提醒" | `0 8,11,14,17,20,23 * * *` | "关闭联盟商船提醒" |
-
-任务 prompt 模板（`/cron add` 第二参数照抄；命令必须写完整路径——
-执行会话没有当前对话上下文，短名脚本无法定位。本机部署存在
-`local/commands.md` 时直接用其中的完整路径版 prompt；其他部署把
-`<PYTHON>`/`<SKILL_DIR>` 替换为实际安装路径）：
-
-自动检查贸易：
-
-```text
-【fkssj 自动检查贸易】依次运行两条命令:
-<PYTHON> <SKILL_DIR>/scripts/check_main.py
-<PYTHON> <SKILL_DIR>/scripts/check_ships.py
-把 check_ships.py 的 RESULT 行原样汇报给用户; 若当前时间在 01:00-08:00 之间, 只执行检查, 不要向用户推送任何结果。
-```
-
-自动检查资源：
-
-```text
-【fkssj 自动检查资源】先运行:
-<PYTHON> <SKILL_DIR>/scripts/check_main.py
-再运行同目录的 check_res.py。若其 RESULT 行的"不足"列表非空: 按 [鱼] [塑料,木材,碎布] [废金属,玻璃,海藻] 分组, 每组只采组内剩余最少的一种(运行同目录 gather_res.py 并传资源名参数, 连续采集加 --no-recheck), 全部采完统一再跑一次同目录 check_res.py 复查。把检查与采集结果汇报给用户; 若当前时间在 01:00-08:00 之间, 只执行, 不要向用户推送任何结果。
-```
-
-搁浅的货轮提醒：
-
-```text
-【fkssj 搁浅货轮提醒】直接向用户推送这条提醒: 搁浅的货轮已在世界刷新!
-```
-
-联盟商船提醒：
-
-```text
-【fkssj 联盟商船提醒】直接向用户推送这条提醒: 联盟商船刷新!
-```
-
-规则：
-- 检查类任务（贸易/资源）夜间 01:00-08:00 只执行不推送，该规则已写进
-  任务 prompt，无需另建夜间任务。
-- 提醒类任务（货轮/商船）是固定时间盲推送，与游戏实际刷新状态无关。
+**暂停与恢复**：一键暂停/恢复全部自动化的协议（暂停即删除定时任务并记录
+状态文件、恢复按暂停前清单重建、闯关不自动恢复）见 `references/pause.md`。
 
 ## 运行约定
 
 - **串行执行，严禁并行**：所有脚本共享同一台设备，并行 = 点击互相干扰。
-  `battle_run.py` 是无限循环，与其余脚本互斥；运行期间禁止调用任何 check_*/gather_*/start_*/stop_*。
+  后台长跑 PID 文件（`$TEMP/fkssj_battle.pid` / `$TEMP/fkssj_claim_seq.pid`）
+  存在即视为对应长跑在跑，不得重复启动同一长跑。
+- **闯关让位规则**：`battle_run.py` 与其他任务冲突时**其他任务优先**（先 `--stop`
+  停止闯关、取日志尾部战果汇报，再执行该任务），完整流程见 `references/battle.md`。
+- **claim_seq 互斥**：`claim_seq.py` 与其余脚本互斥（检查类定时任务遇其在跑跳过
+  本轮；用户当面任务询问用户），完整规则见 `references/reward.md`。
+- **长跑结果自推与标记兜底**：battle_run / claim_seq 启动即创建
+  `$TEMP/fkssj_battle_done.pending` / `fkssj_claim_seq_done.pending`；脚本退出路径
+  自动推送结果（日间直推微信 / 夜间写夜间日志 `$TEMP/fkssj_night_events.log`），
+  成功后删标记；日间直推失败保留标记，由检查类任务与夜间总结推送顺路兜底补推后
+  删除；让位/停止场景由 agent 推送后删标记。机制见 `references/battle.md`、
+  `references/reward.md`、`references/cron.md`。
+- **定时任务遇游戏未运行**：先询问是否启动游戏（3 分钟无回复视为不同意、跳过本轮），
+  夜间 01:00:00-07:59:59 不询问直接跳过；见 `references/cron.md`。
+- **同刻多任务优先级**：占设备越久优先级越靠后（提醒 → 夜间总结/每日服务总结 → 贸易 → 资源 → 领取；私聊监视遇长跑让位），默认触发时刻已错峰，自定义周期须错开分钟位（表见 `references/cron.md`）。
+- **微信推送节流**：iLink 通道每 30 秒冷却一条，同 30 秒窗口内第二条起会被静默丢弃；脚本直推统一走 `game_lib.push_weixin()`，内置 `$TEMP/fkssj_push_guard` 30 秒推送锁（不足 30 秒自动补满再发），同刻互挤自动错开（货轮/商船 schtasks 整点、chat_watch :30 相位）；agent 会话推送（夜间总结与每日服务总结均 4 分、不同小时）靠分钟位错开；新建/改周期须保持即时任务分钟位错开（详见 `references/cron.md` 微信推送节流）。
 - **一次只信 RESULT 行**：`[HH:MM:SS]` 前缀行是人类可读过程，`RESULT:` 行才是
   机器可解析结果；`ERROR` / `NOT_MAIN` / `STOPPED` / `STARTED` 开头的行是状态标记。
 - **日志不出现按钮坐标**是本项目硬约定，改代码时不得在 print/log 中加坐标。
@@ -260,79 +223,3 @@ metadata:
   把结果转告用户，任何脚本不得弹阻塞式窗口。
 - 每个单次脚本前置校验主界面（on_main），结束尽量还原回主界面。
 - RapidOCR 首次加载需几秒属正常；`battle_run.py` 启动会打印模板加载行。
-
-## 互斥与故障排查
-
-| 现象 | 原因 | 处理 |
-|---|---|---|
-| `ConnectionRefusedError` / `no devices` | 模拟器未启动 | 先启动雷电模拟器，再跑 `start_game.py` |
-| setup_emulator exit 2 | 配置修正需重启模拟器才生效 | 重启后重跑 setup_emulator 验证；仍不符则关闭模拟器再跑本脚本修正后启动 |
-| start_game 超时后自动恢复成功 | 游戏启动后有弹窗遮挡 | 属预期兜底路径，无需处理 |
-| check_main 反复 NOT_MAIN（兜底按钮也无效） | 模态弹窗遮挡（如联盟成员列表） | `force_main.py` 重启游戏兜底 |
-| check_ships exit 2 | 船货物不全，无法交货 | 告知用户手动补货，属预期行为 |
-| check_res exit 2 | 上限 OCR 失败 | 重跑一次；仍失败检查 CAP_BOX 裁剪框 |
-| 主界面误判 | 游戏昼夜光照导致像素色漂移 | 容差 COLOR_TOL 已设 10，勿调大 |
-
-## 维护与校准（坐标/颜色全部集中在常量区）
-
-- **坐标与颜色常量**：`scripts/game_lib.py` 顶部（贸易船三色、主界面特征色、资源裁剪框、
-  各按钮坐标、游戏包名 PKG）和 `scripts/battle_run.py` 顶部（胜负判定色、跳过/再战/
-  下一关按钮）。改一处即全脚本生效，勿把数值散落进逻辑。
-- **主界面四重判定**（`game_lib.on_main`，勿随意删条件）：nav_stage 模板匹配 ≥ 0.80；
-  (300,255) 不是资源界面特征色；左上区域 OCR 无"城战"二字；(65,1860) 为主界面特征色。
-  历史教训：资源界面和城战界面 nav_stage 同样匹配 1.00，单模板不可靠；昼夜变化曾让
-  容差 40 的像素判定失效，容差必须保持 10。
-- **模板更新**：游戏改版后截图裁剪替换 `assets/nav_stage.png`、`assets/btn_fight.png`
-  （保持原尺寸比例）。
-- **校准流程**：改常量后必须实测——主界面（正例）、资源界面（反例）、贸易船三状态
-  各跑一遍对应脚本，确认判定与 RESULT 行正确后再交付。
-- 修改脚本后同步维护本 SKILL.md 的脚本清单表。
-
-## Common Pitfalls
-
-1. **并行跑脚本**。adb 点击是全局的，两个进程同时点 = 乱点。永远串行。
-2. **不看 exit code 只看打印**。exit 2 是"需要用户行动"的信号（缺货/OCR 失败），
-   必须向用户转述 RESULT 行。
-3. **模拟器没开就跑**。game_lib 导入时即初始化 adb 连接与 OCR，会直接抛异常。
-4. **在 battle_run 运行中调 gather_res**。会被 battle_run 的点击流打断采集计秒，
-   造成退出失败误报。
-5. **force_main 运行前不确认无其他脚本在跑**。它重启游戏，会掐断任何在途操作。
-6. **以为 RESULT 在最后一行之外**。个别路径（如 check_ships 部分成功）RESULT 在
-   返回主界面之后打印，exit code 才是权威。
-7. **在 Git Bash 里用 `/c/...` 路径调 python**。原生 python.exe 不做 MSYS 路径转换，
-   `python /c/Users/.../check_main.py` 会报 `can't open file 'C:\c\Users\...'`（no such
-   file)。一律用正斜杠原生路径，例如：
-
-```text
-<PYTHON> <SKILL_DIR>/scripts/check_main.py
-```
-
-## Verification Checklist
-
-- [ ] 雷电模拟器在运行（adb server 5037 端口在监听）；游戏未跑先执行 `scripts/start_game.py`
-- [ ] 雷电模拟器为平板版（配置分辨率 1920×1080、DPI 280）；不符先跑 `scripts/setup_emulator.py`
-- [ ] 所有命令均为"运行位置"节定义的 Python 全路径 + skill scripts 全路径形式
-- [ ] `scripts/check_main.py` 在主界面时输出 `MAIN nav_score=...`，exit 0
-- [ ] `scripts/start_game.py` 游戏在跑时输出 `RESULT: 游戏运行中 主界面=是`，exit 0
-- [ ] `scripts/stop_game.py` 输出 `RESULT: 游戏已停止`，exit 0
-- [ ] `scripts/check_ships.py` 输出含三船状态的 `RESULT:` 行
-- [ ] `scripts/check_res.py` 输出 `RESULT: 上限=... ... 不足=...`
-- [ ] `scripts/gather_res.py` 无参数时报用法错误 exit 1
-- [ ] `scripts/gather_res.py` 按剩余百分比自动定采集时长：>70% 1 分钟 / 40%-70% 3 分钟 / <40% 5 分钟，RESULT 含"(N分钟)"
-- [ ] `scripts/gather_res.py` 带 `--no-recheck` 时 RESULT 仅"采集完成(N分钟) 回主界面=是"
-- [ ] `scripts/battle_run.py` 任何退出路径结束后自动调 check_main 恢复主界面，末尾输出 RESULT 行
-- [ ] `scripts/battle_run.py` 告警仅打印 [ALERT] 行，不弹窗
-- [ ] `scripts/check_main.py` 第 2 次尝试点兜底按钮，之后剩余次数点返回按钮层层退回
-- [ ] "fkssj帮助"按 `templates/help.txt` 模板逐行输出（保持换行）
-- [ ] 本机部署：`local/commands.md` 存在时优先逐字使用其中的完整路径命令
-- [ ] 定时任务开启前 `/cron list` 查重；关闭时按【fkssj …】标识找到任务再删除
-- [ ] 每次汇报均符合"输出规范"三字段逐行格式（check_main/force_main 成功时仅"已回到主界面"）
-- [ ] 所有脚本日志与汇报中无按钮坐标
-
-## 部署与开源说明
-
-- 依赖见 `requirements.txt`（Python 3.12+），许可证见 `LICENSE`（AGPL-3.0）。
-- `local/` 目录是本机部署时生成的完整路径命令清单（见"运行位置"节），
-  属机器私有配置，已被 `.gitignore` 排除，不随仓库分发。
-- 部署到新机器：安装 `requirements.txt` 依赖 → 确认雷电模拟器为平板版预设
-  （跑 `scripts/setup_emulator.py`）→ 按"维护与校准"节的校准流程实测判定。

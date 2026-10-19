@@ -225,3 +225,132 @@ def scan_resources():
             lack.append(name)
     back_to_main_from_res()
     return (cap, vals, lack)
+
+
+def is_night():
+    """夜间判定: 01:00:00-07:59:59 为夜间(夜间任务只执行/只记录不推送)"""
+    from datetime import datetime
+    return 1 <= datetime.now().hour < 8
+
+
+def _hermes_send_argv():
+    """构造 `hermes send -t weixin` 的命令行; 消息经 stdin 传入(避免引号 / % / & 转义问题)。
+    本机 PATH 上的 hermes 是 Git Bash 无扩展名脚本, Windows CreateProcess 无法直接执行,
+    必须改用 hermes.cmd 并经 cmd /c 调用(2026-10-17 实测: 直接跑报 WinError 2)。"""
+    import shutil, subprocess
+    for cand in ('hermes.cmd', 'hermes.exe', 'hermes'):
+        p = shutil.which(cand)
+        if not p:
+            continue
+        if p.lower().endswith(('.cmd', '.bat')):
+            return ['cmd', '/c', subprocess.list2cmdline([p, 'send', '-t', 'weixin', '-f', '-'])]
+        return [p, 'send', '-t', 'weixin', '-f', '-']
+    return ['hermes', 'send', '-t', 'weixin', '-f', '-']
+
+
+def push_weixin(msg, max_tries=3):
+    """经 hermes CLI 直推微信消息(iLink 通道每 30 秒冷却一条)。
+    每次尝试独立过 $TEMP/fkssj_push_guard 推送锁(距上次不足 30 秒则 sleep 补满再写锁),
+    再调用 hermes send -t weixin <msg>, stdout 含 "Sent to" 判成功。
+    失败自动短时重试: 默认共试 max_tries 次, 重试间隔由推送锁自然拉开(约 30 秒);
+    提醒类(push_reminder 由 schtasks/pythonw 唤醒)传 max_tries=1, 重试由调用方
+    外层自控(2026-10-18 起货轮提醒失败后约 40 秒重调 1 次, 避开 iLink 30 秒
+    全局冷却)。每次尝试(成功/失败+原因 rc/超时/无成功标记)
+    追加一行到 $TEMP/fkssj_push.log, 供事后区分失败模式(此前失败静默无法排查)。
+    返回 True=已送达; False=全部尝试失败, 调用方需降级写 pending 标记防丢消息。"""
+    import os, time, subprocess, tempfile
+    guard = os.path.join(tempfile.gettempdir(), 'fkssj_push_guard')
+    plog = os.path.join(tempfile.gettempdir(), 'fkssj_push.log')
+
+    def _rec(ok, n, tries, why=''):
+        try:
+            from datetime import datetime
+            with open(plog, 'a', encoding='utf-8') as f:
+                f.write('[%s] %s(%d/%d): %s%s\n' % (
+                    datetime.now().strftime('%m-%d %H:%M:%S'),
+                    'ok' if ok else 'fail', n, tries,
+                    str(msg)[:60], (' | ' + why) if why else ''))
+        except Exception:
+            pass
+
+    tries = max(1, max_tries)
+    for n in range(1, tries + 1):
+        try:
+            if os.path.exists(guard):
+                with open(guard) as f:
+                    last = int(f.read().strip())
+                diff = int(time.time()) - last
+                if 0 < diff < 30:
+                    time.sleep(30 - diff)
+        except Exception:
+            pass
+        try:
+            with open(guard, 'w') as f:
+                f.write(str(int(time.time())))
+        except Exception:
+            pass
+        why = tail = ''
+        try:
+            r = subprocess.run(_hermes_send_argv(), input=msg,
+                               capture_output=True, text=True, encoding='utf-8',
+                               timeout=60)
+            out = (r.stdout or '') + (r.stderr or '')
+            if r.returncode == 0 and ('Sent to' in out or '"success": true' in out):
+                _rec(True, n, tries)
+                return True
+            why = '无成功标记' if r.returncode == 0 else ('rc=%s' % r.returncode)
+            tail = out.strip().replace('\n', ' ')[:120]
+        except subprocess.TimeoutExpired:
+            why = '60s超时被kill'
+        except Exception as e:
+            why = '异常:%s' % e
+        _rec(False, n, tries, why + ((' | 输出尾:' + tail) if tail else ''))
+    return False
+
+
+def log_night_event(task, summary):
+    """夜间事件记录: 追加一行到 $TEMP/fkssj_night_events.log, 由每天 08:04 的
+    夜间总结推送任务统一总结推送后清空。行格式: [MM-DD HH:MM] 任务: 摘要"""
+    import os, tempfile
+    from datetime import datetime
+    path = os.path.join(tempfile.gettempdir(), 'fkssj_night_events.log')
+    line = '[%s] %s: %s\n' % (datetime.now().strftime('%m-%d %H:%M'), task, summary)
+    with open(path, 'a', encoding='utf-8') as f:
+        f.write(line)
+
+
+def log_stat(service, summary):
+    """每日服务总结计数: 追加一行到 $TEMP/fkssj_stats.log, 由每天 01:04 的
+    每日服务总结任务统一汇总推送后清空(该任务是夜间窗口内唯一允许直推的消息)。
+    行格式: [MM-DD HH:MM] 服务: 摘要"""
+    import os, tempfile
+    from datetime import datetime
+    path = os.path.join(tempfile.gettempdir(), 'fkssj_stats.log')
+    line = '[%s] %s: %s\n' % (datetime.now().strftime('%m-%d %H:%M'), service, summary)
+    try:
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(line)
+    except OSError:
+        pass
+
+
+def push_result(task, summary, pending_file):
+    """长跑结果自推(供 battle_run/claim_seq 等结束路径调用):
+    夜间只写夜间日志(由 08:04 夜间总结推送任务统一总结), 日间经 hermes 直推。
+    成功(或已记夜间日志)后删除 pending_file 标记并记入每日统计; 日间直推失败
+    则保留标记(不记统计), 由后续贸易/资源会话顺路兜底补推。
+    返回 True=已完成推送, False=直推失败待兜底。"""
+    if is_night():
+        log_night_event(task, summary)
+        log_stat(task, summary)
+        ok = True
+    else:
+        ok = push_weixin(summary)
+        if ok:
+            log_stat(task, summary)
+    if ok:
+        try:
+            os.remove(pending_file)
+        except OSError:
+            pass
+    return ok

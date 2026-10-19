@@ -9,13 +9,18 @@
   - 单场战斗超过 15 分钟无结算 -> 告警退出
   - 任何退出路径(连败/超时告警, 用户中断, 异常)结束后自动调同目录 check_main.py
     恢复主界面, 输出 RESULT 行(已回主界面/回主界面失败)
-用法: python battle_run.py   (先手动打开游戏并停在主界面)
-Ctrl+C 随时中断, 打印统计。
+  - 启动时创建战果待推送标记 $TEMP/fkssj_battle_done.pending
+    (结束后脚本自推战果: 夜间记夜间日志/日间 hermes 直推, 成功删除标记,
+     日间直推失败保留标记由贸易/资源会话顺路兜底补推)
+用法: python battle_run.py   (先手动打开游戏并停在主界面; 供后台启动, 见 SKILL.md)
+      python battle_run.py --stop   (停止后台闯关进程)
+Ctrl+C 随时中断, 打印统计。后台运行时用 --stop 停止, 统计看日志尾部。
 """
 import sys, os, time, tempfile, subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cv2
 from pyadb import Adb
+from game_lib import push_result
 
 # 路径自适应: 脚本在 <skill>/scripts/, 匹配模板在 <skill>/assets/, 截图写系统临时目录
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -23,6 +28,13 @@ ASSETS = os.path.join(ROOT, 'assets')
 SHOTS = os.path.join(tempfile.gettempdir(), 'fkssj_skill_shots')
 os.makedirs(SHOTS, exist_ok=True)
 SHOT = os.path.join(SHOTS, 'auto_battle_last.png')
+PID_FILE = os.path.join(os.environ.get('TEMP', '.'), 'fkssj_battle.pid')
+PENDING_FILE = os.path.join(os.environ.get('TEMP', '.'), 'fkssj_battle_done.pending')   # 战果待推送标记
+
+# 统计预初始化(模块级): 用户中断/异常退出时 finally 自推也能读到最新累计值
+total_win = 0
+total_lose = 0
+t0 = time.time()
 
 MAX_FAIL = 5          # 连续失败告警阈值
 POLL_SEC = 2.0          # 轮询间隔(秒)
@@ -95,6 +107,45 @@ def alert(msg):
     print('[ALERT] ' + msg)
 
 
+def write_pid():
+    """把当前进程 PID 写入 PID 文件, 供 --stop 查找;
+    同时创建战果待推送标记(长跑结束后脚本自推战果并删除; --stop 让位时由 agent 推送后删除)"""
+    try:
+        with open(PID_FILE, 'w') as f:
+            f.write(str(os.getpid()))
+        open(PENDING_FILE, 'w').close()
+    except Exception as e:
+        print('WARN 写PID文件失败: %r' % e)
+
+
+def remove_pid():
+    try:
+        os.remove(PID_FILE)
+    except OSError:
+        pass
+
+
+def stop():
+    """按 PID 文件停止后台闯关进程(杀进程树, 避免在途 check_main 子进程残留)"""
+    if not os.path.exists(PID_FILE):
+        print('RESULT: 闯关未在运行')
+        return 0
+    try:
+        with open(PID_FILE) as f:
+            pid = f.read().strip()
+        r = subprocess.run(['taskkill', '/PID', pid, '/F', '/T'],
+                           capture_output=True)
+    except Exception as e:
+        print('RESULT: 闯关停止失败 %r' % e)
+        return 1
+    remove_pid()
+    if r.returncode != 0:
+        print('RESULT: 闯关未在运行(进程已不存在)')
+        return 0
+    print('RESULT: 闯关已停止, 统计见日志尾部')
+    return 0
+
+
 def back_to_main():
     """结束后调同目录 check_main.py 恢复主界面, 返回 0成功/1失败"""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'check_main.py')
@@ -108,6 +159,7 @@ def back_to_main():
 
 
 def main():
+    global total_win, total_lose, t0
     fail_count = 0
     total_win = 0
     total_lose = 0
@@ -182,7 +234,10 @@ def main():
 
 
 if __name__ == '__main__':
+    if '--stop' in sys.argv[1:]:
+        sys.exit(stop())
     code = 0
+    write_pid()
     try:
         main()
     except KeyboardInterrupt:
@@ -190,4 +245,12 @@ if __name__ == '__main__':
     except Exception as e:
         print('\n异常退出: %r' % e)
         code = 1
-    sys.exit(code or back_to_main())
+    finally:
+        remove_pid()
+        # 任何退出路径都先恢复主界面; 恢复失败或原异常 code 非零则 exit 1
+        main_code = back_to_main() or code
+        summary = '海岛闯关%s 共%d场 胜%d 负%d 用时%.0f分钟' % (
+            '异常中断' if code else '结束',
+            total_win + total_lose, total_win, total_lose, (time.time() - t0) / 60)
+        push_result('闯关', summary, PENDING_FILE)
+    sys.exit(main_code)
