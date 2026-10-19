@@ -58,7 +58,7 @@ prompt（`local/commands.md` 优先规则见母 SKILL.md"运行位置"节）；�
 `<PYTHON>`/`<SKILL_DIR>` 替换为实际安装路径。prompt 自包含：夜间规则（夜间
 不推送、写夜间日志）、正常轮静默（日间一切正常不汇报，异常或采集/交货动作才
 推送，v3.2.3）、闯关让位步骤、长跑标记兜底补推步骤、领取序列跳过/防重复/
-窗口守卫步骤、游戏未运行询问步骤均已内置，逐字照抄即可。夜间日志行格式统一为
+窗口守卫步骤、闯关挂机奖励顺路领取步骤（仅贸易模板）、游戏未运行询问步骤均已内置，逐字照抄即可。夜间日志行格式统一为
 `[MM-DD HH:MM] 任务名: 摘要`（时间取当前时刻，任务名固定用：闯关 / 城战奖励 /
 贸易 / 资源 / 经验 / 情报 / 私聊）。
 
@@ -90,17 +90,22 @@ prompt（`local/commands.md` 优先规则见母 SKILL.md"运行位置"节）；�
    - RESULT 为"检测异常": 按输出规范汇报异常, 结束本轮
 4. <PYTHON> <SKILL_DIR>/scripts/check_main.py
 5. <PYTHON> <SKILL_DIR>/scripts/check_ships.py
+6. <PYTHON> <SKILL_DIR>/scripts/claim_battle_reward.py (顺路领取闯关挂机奖励:
+   清升级点 -> OCR 挂机小时与上限 -> 小时 >= 上限-1 或 >= 23 才领取,
+   未达条件自动跳过并回主界面)
 汇报规则(日间条件推送, v3.2.3): 若本轮一切正常(check_ships RESULT 无"交货失败"/"异常"
-字样), 属正常轮——不汇报, 夜间日志与每日统计照记后**最终响应只输出 [SILENT]**(Hermes
+字样, 且 claim_battle_reward RESULT 为"闯关奖励未领取 挂机时长不足"), 属正常轮——
+不汇报, 夜间日志与每日统计照记后**最终响应只输出 [SILENT]**(Hermes
 cron 的静默标记, 逐字输出英文、勿写成 [静默] 等任何变体, 平台据此跳过微信投递);
 否则把
-check_ships.py 的 RESULT 行原样汇报给用户。若当前时间在 01:00:00-07:59:59 之间,
+check_ships.py 与 claim_battle_reward.py 的 RESULT 行原样汇报给用户。
+若当前时间在 01:00:00-07:59:59 之间,
 只执行检查不推送, 并把 RESULT 摘要记入夜间日志:
 echo "[<当前MM-DD HH:MM>] 贸易: <RESULT 摘要>" >> "$TEMP/fkssj_night_events.log"
 (留待早上夜间总结推送任务统一推送)
 然后无论日间夜间, 都追加一行每日统计(供 01:04 每日服务总结任务计数):
 echo "[<当前MM-DD HH:MM>] 贸易: 完成1轮检查(<RESULT 摘要>)" >> "$TEMP/fkssj_stats.log"
-6. 战果兜底补推: 若 $TEMP/fkssj_battle_done.pending 存在(闯关结束日间直推失败的
+7. 战果兜底补推: 若 $TEMP/fkssj_battle_done.pending 存在(闯关结束日间直推失败的
    降级标记), 用 tail -n 15 "$TEMP/fkssj_battle_run.log" 取战果按输出规范推送给用户,
    然后 rm -f "$TEMP/fkssj_battle_done.pending"; 若 $TEMP/fkssj_claim_seq_done.pending
    存在(领取序列同理), 用 tail -n 15 "$TEMP/fkssj_claim_seq.log" 取结果补推后同样删标记。
@@ -376,7 +381,7 @@ echo "[<当前MM-DD HH:MM>] 情报: 完成1次领取(<RESULT 摘要>)" >> "$TEMP
   1. 货轮/商船提醒（push_reminder 纯推送，不占设备）
   2. 夜间总结推送 / 每日服务总结（均只读本地文件与 /cron list，不占设备）
   3. 自动领取经验与联盟情报（合并任务约 2 分钟，分钟位 50）
-4. 自动检查贸易（约 1-3 分钟）
+4. 自动检查贸易（含闯关挂机奖励领取，约 2-4 分钟）
 5. 自动检查资源（最坏约 18 分钟）
 6. 自动领取城战在线奖励（序列占设备约 22 分钟，永远最后）
 7. chat_watch 私聊监视（常驻，tick 相位 :30 秒；遇 3-6 占设备时按 PID 让位跳过本轮）
