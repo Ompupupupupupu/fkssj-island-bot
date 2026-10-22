@@ -20,7 +20,7 @@ import sys, os, time, tempfile, subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cv2
 from pyadb import Adb
-from game_lib import push_result
+from game_lib import push_result, ensure_device_free
 
 # 路径自适应: 脚本在 <skill>/scripts/, 匹配模板在 <skill>/assets/, 截图写系统临时目录
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -236,6 +236,7 @@ def main():
 if __name__ == '__main__':
     if '--stop' in sys.argv[1:]:
         sys.exit(stop())
+    ensure_device_free('battle_run.py')
     code = 0
     write_pid()
     try:

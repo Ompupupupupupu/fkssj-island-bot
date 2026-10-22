@@ -74,6 +74,7 @@ def main():
         print('用法: python claim_seq.py [--stop]')
         return 1
 
+    ensure_device_free('claim_seq.py')
     log('城战在线奖励后台编排启动')
     write_pid()
     img = shot()

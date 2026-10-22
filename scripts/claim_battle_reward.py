@@ -76,6 +76,7 @@ def can_claim(cur, tmax):
 
 
 def main():
+    ensure_device_free('claim_battle_reward.py')
     img = shot()
     if not on_main(img):
         print('不在主界面, 尝试恢复')

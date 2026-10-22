@@ -51,6 +51,7 @@ def next_update_shown(img):
 
 
 def main():
+    ensure_device_free('claim_intel.py')
     img = shot()
     if not on_main(img):
         print('不在主界面, 尝试恢复')

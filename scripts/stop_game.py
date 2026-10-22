@@ -13,6 +13,7 @@ RECHECK_WAIT = 2                    # force-stop 后等待复检(秒)
 
 
 def main():
+    ensure_device_free('stop_game.py')
     pid = game_pid()
     if not pid:
         print('NOT_RUNNING 游戏未运行, 无需停止')

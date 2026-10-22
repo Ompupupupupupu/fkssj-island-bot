@@ -23,7 +23,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from game_lib import shot, on_main, tap, log, is_night, push_weixin, log_night_event, log_stat
+from game_lib import shot, on_main, tap, log, is_night, push_weixin, log_night_event, log_stat, find_device_holder
 
 TICK_PHASE = 30                    # tick 相位: 每个检测周期的第几秒(错开整点任务高峰)
 TICK_PERIOD = 120                  # 检测周期(秒): 每 2 分钟一轮
@@ -32,16 +32,8 @@ MUTEX_PIDS = [                     # 长跑任务 PID 文件(存在即让位)
     os.path.join(os.environ.get('TEMP', '.'), 'fkssj_battle.pid'),
     os.path.join(os.environ.get('TEMP', '.'), 'fkssj_claim_seq.pid'),
 ]
-DEVICE_SCRIPTS = [                 # 占设备脚本名单(进程命令行命中即让位, 排除自身)
-    'check_main.py', 'check_ships.py', 'check_res.py', 'gather_res.py',
-    'claim_online_reward.py', 'claim_seq.py', 'claim_exp.py', 'claim_intel.py',
-    'claim_battle_reward.py',
-    'battle_run.py',
-    'start_game.py', 'stop_game.py', 'force_main.py', 'status_check.py',
-]
-# game_status.py(只读 adb 探测) / push_reminder.py(无截屏无点击) 不占设备, 不入名单
-PS_QUERY = ('Get-CimInstance Win32_Process -Filter "Name LIKE \'python%\'" | '
-            'ForEach-Object { "$($_.ProcessId)|$($_.CommandLine)" }')
+# 占设备脚本名单与进程枚举实现已上移 game_lib(DEVICE_SCRIPTS / find_device_holder),
+# 供各任务脚本启动自检共用; 本文件让位逻辑改引 find_device_holder。
 
 BADGE_X, BADGE_Y = 852, 1669       # 主界面聊天入口未读红点采样点(第一层粗筛)
 CHAT_X, CHAT_Y = 540, 1700         # 主界面聊天入口按钮
@@ -95,34 +87,6 @@ def busy():
     return any(os.path.exists(p) for p in MUTEX_PIDS)
 
 
-def other_device_process():
-    """枚举 python/pythonw 进程命令行(PowerShell CIM, 本机 wmic 已移除不可用),
-    命中占设备脚本名单(排除自身进程)则让位。
-    返回值: 命中的脚本名 / None=无占用 / ''=枚举失败(调用方保守跳过本轮)。
-    命令行中非 ASCII 参数按 replace 解码, 名单全 ASCII 不受影响。"""
-    try:
-        r = subprocess.run(
-            ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-             '-Command', PS_QUERY],
-            capture_output=True, text=True, encoding='utf-8',
-            errors='replace', timeout=15)
-        out = r.stdout or ''
-        mypid = str(os.getpid())
-        for line in out.splitlines():
-            line = line.strip()
-            if '|' not in line:
-                continue
-            pid, cmd = line.split('|', 1)
-            if not pid.isdigit() or pid == mypid:
-                continue
-            for name in DEVICE_SCRIPTS:
-                if name in cmd:
-                    return name
-    except Exception:
-        return ''
-    return None
-
-
 def wait_tick():
     """等待到下一个检测相位(周期 TICK_PERIOD 秒, 相位对齐第 TICK_PHASE 秒)"""
     sec = time.time() % TICK_PERIOD
@@ -155,7 +119,7 @@ def check_round(notified):
     if busy():
         log('闯关/城战进行中, 本轮跳过')
         return notified
-    who = other_device_process()
+    who = find_device_holder()
     if who:
         log('%s 运行中, 私聊监视让位, 本轮跳过' % who)
         return notified

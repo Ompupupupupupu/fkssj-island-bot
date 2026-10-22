@@ -83,6 +83,7 @@ def main():
               (args[0], '/'.join(RES_NAMES)))
         return 1
 
+    ensure_device_free('gather_res.py')
     img = shot()
     if not on_main(img):
         print('ERROR 不在主界面, 请先运行 check_main.py 确认/恢复')

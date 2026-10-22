@@ -20,6 +20,7 @@ def back_to_main():
 
 
 def main():
+    ensure_device_free('check_res.py')
     if not on_main(shot()):
         print('不在主界面, 尝试恢复')
         code = back_to_main()

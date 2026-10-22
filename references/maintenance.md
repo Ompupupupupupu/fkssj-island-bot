@@ -6,7 +6,9 @@
 ## 维护与校准（坐标/颜色全部集中在常量区）
 
 - **坐标与颜色常量**：`scripts/game_lib.py` 顶部（贸易船三色、主界面特征色、资源裁剪框、
-  各按钮坐标、游戏包名 PKG）、`scripts/check_ships.py` 顶部（交货被拒弹窗检测：检测点、
+  各按钮坐标、游戏包名 PKG、设备占用互斥：占设备脚本名单 DEVICE_SCRIPTS / 进程枚举
+  find_device_holder / 启动自检 ensure_device_free——枚举失败放行+WARN）、
+  `scripts/check_ships.py` 顶部（交货被拒弹窗检测：检测点、
   "所需产品不足"弹窗紫色标题栏参考色、弹窗退出键；博物馆检测：入口/人气币气泡/寻宝
   入口/小队完成三点、返回键、展厅视角拖动与帧差判停参数；寻宝派遣：区域点击表、
   地图上下视角拖动、可寻宝判定点与参考色、选人/确认/槽位/派出判定色、区域退回键）、
@@ -47,7 +49,9 @@
 - [ ] 雷电模拟器在运行（adb server 5037 端口在监听）；游戏未跑先执行 `scripts/start_game.py`
 - [ ] 雷电模拟器为平板版（配置分辨率 1920×1080、DPI 280）；不符先跑 `scripts/setup_emulator.py`
 - [ ] 所有命令均为 Python 全路径 + skill scripts 全路径形式
+- [ ] 任务脚本（如 `scripts/check_res.py`）启动时已有其他占设备脚本进程在跑则输出 `RESULT: XX未执行 已有YY进程占用设备` 且 exit 2，不执行任何设备操作；设备空闲时正常执行
 - [ ] `scripts/check_main.py` 在主界面时输出 `MAIN nav_score=...`，exit 0
+- [ ] `scripts/check_main.py` 启动时闯关（battle_run）在跑（PID 文件+进程枚举双确认）则先输出"检测到闯关进程在运行, 先终止..."并杀其进程树、清 PID 文件、善后战斗画面（战斗中点跳过，出结算/回主界面即止）；闯关正常结束调它恢复时（PID 文件已删）不触发终止
 - [ ] `scripts/start_game.py` 游戏在跑时输出 `RESULT: 游戏运行中 主界面=是`，exit 0
 - [ ] `scripts/stop_game.py` 输出 `RESULT: 游戏已停止`，exit 0
 - [ ] `scripts/check_ships.py` 输出含三船状态的 `RESULT:` 行；缺货交货被拒时输出含"交货被拒(所需产品不足), 退回贸易页面"且 exit 2

@@ -2,7 +2,7 @@
 """fkssj 游戏自动化共享库 (供 check_* 系列单次脚本调用)
 从 status_check.py 提取的公共常量与函数; status_check.py 保持独立不受影响。
 """
-import sys, os, time, tempfile
+import sys, os, time, subprocess, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cv2
 from pyadb import Adb
@@ -67,6 +67,62 @@ def game_pid():
     """游戏进程 pid 文本, 未运行返回 None"""
     out = adb.shell('pidof %s' % PKG).decode('utf-8', 'replace').strip()
     return out or None
+
+
+# ---- 设备占用互斥(任务脚本启动自检 + chat_watch 让位共用) -------------------
+DEVICE_SCRIPTS = [                 # 占设备脚本名单(进程命令行命中即视为占用)
+    'check_main.py', 'check_ships.py', 'check_res.py', 'gather_res.py',
+    'claim_online_reward.py', 'claim_seq.py', 'claim_exp.py', 'claim_intel.py',
+    'claim_battle_reward.py',
+    'battle_run.py',
+    'start_game.py', 'stop_game.py', 'force_main.py', 'status_check.py',
+]
+# game_status.py(只读 adb 探测) / push_reminder.py(无截屏无点击) 不占设备, 不入名单
+PS_QUERY = ('Get-CimInstance Win32_Process -Filter "Name LIKE \'python%\'" | '
+            'ForEach-Object { "$($_.ProcessId)|$($_.CommandLine)" }')
+
+
+def find_device_holder(exclude_pid=None):
+    """枚举 python/pythonw 进程命令行(PowerShell CIM, 本机 wmic 已移除不可用),
+    命中占设备脚本名单返回该脚本名; None=无占用; ''=枚举失败。
+    exclude_pid: 排除的进程 PID(默认排除自身进程, 避免命中自己)。
+    命令行中非 ASCII 参数按 replace 解码, 名单全 ASCII 不受影响。"""
+    try:
+        r = subprocess.run(
+            ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+             '-Command', PS_QUERY],
+            capture_output=True, text=True, encoding='utf-8',
+            errors='replace', timeout=15)
+        out = r.stdout or ''
+        mypid = str(exclude_pid if exclude_pid is not None else os.getpid())
+        for line in out.splitlines():
+            line = line.strip()
+            if '|' not in line:
+                continue
+            pid, cmd = line.split('|', 1)
+            if not pid.isdigit() or pid == mypid:
+                continue
+            for name in DEVICE_SCRIPTS:
+                if name in cmd:
+                    return name
+    except Exception:
+        return ''
+    return None
+
+
+def ensure_device_free(owner):
+    """任务脚本启动自检: 其他占设备脚本在跑则打印 RESULT 并 sys.exit(2)。
+    枚举失败('')放行并打 WARN(CIM 故障不应阻断全部任务)。
+    owner: 当前脚本名(如 'gather_res.py')。
+    恢复/检查类 check_main/force_main/status_check 不调用本函数
+    (它们是其他脚本失败时的恢复手段, 自检会挡住调用方形成自锁)。"""
+    holder = find_device_holder()
+    if holder == '':
+        log('WARN 设备占用检测枚举失败, 放行')
+        return
+    if holder:
+        print('RESULT: %s未执行 已有%s进程占用设备' % (owner, holder))
+        sys.exit(2)
 
 
 def ocr_text(crop):

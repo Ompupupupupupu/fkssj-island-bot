@@ -39,6 +39,7 @@ def has_exp(img):
 
 
 def main():
+    ensure_device_free('claim_exp.py')
     log('校验主界面')
     if not on_main(shot()):
         print('不在主界面, 尝试恢复')

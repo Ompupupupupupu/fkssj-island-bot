@@ -35,7 +35,7 @@
   repeat=1 主动询问一次）；说"恢复自动化"按暂停前状态逐项恢复（闯关不自动恢复）
 
 设计原则：**单次执行、检查与操作分离、结果可解析**——每个脚本跑一轮就退出，
-输出机器可解析的 `RESULT:` 汇总行与语义化 exit code（0 成功 / 1 失败 / 2 需用户行动）。
+输出机器可解析的 `RESULT:` 汇总行与语义化 exit code（0 成功 / 1 失败 / 2 需用户行动，含设备被占用——任务脚本启动自检发现其他占设备脚本在跑时不执行直接退出）。
 
 ## 环境要求
 
@@ -150,7 +150,8 @@ python scripts/setup_emulator.py
 
 - 脚本通过本机 adb server（127.0.0.1:5037，随雷电模拟器自动运行）直连设备，无需 adb 在 PATH。
 - 运行时截图写入 `$TEMP/fkssj_skill_shots/`。
-- 所有脚本串行执行（共享同一台设备）；`battle_run.py` 与其他任务冲突时其他任务优先
+- 所有脚本串行执行（共享同一台设备）；任务脚本启动前自检设备占用，发现其他占设备
+  脚本在跑则不执行、exit 2（不打扰执行中的任务）；`battle_run.py` 与其他任务冲突时其他任务优先
   （先 `--stop` 停止闯关并汇报战果，再执行该任务，详见 [references/battle.md](references/battle.md)）；
   `claim_seq.py` 与其余脚本互斥（检查类定时任务遇其在跑则跳过本轮，
   详见 [references/reward.md](references/reward.md)）；`chat_watch.py` 常驻监视

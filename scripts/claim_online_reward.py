@@ -63,6 +63,7 @@ def main():
         print('ERROR 领取次数须为 1-7')
         return 1
 
+    ensure_device_free('claim_online_reward.py')
     log('校验主界面')
     if not on_main(shot()):
         print('不在主界面, 尝试恢复')

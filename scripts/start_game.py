@@ -16,6 +16,7 @@ LOAD_POLL = 5                       # 轮询间隔(秒)
 
 
 def main():
+    ensure_device_free('start_game.py')
     pid = game_pid()
     if pid:
         log('游戏已在运行 (pid %s), 不重启' % pid)
